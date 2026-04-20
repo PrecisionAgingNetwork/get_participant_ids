@@ -24,16 +24,12 @@ get_participant_ids <- function(freeze_date, connection){
            hml_id_created_date = as.Date(hml_id_created_date))
   
   # Get people in biobank manifests
-  info_biobank_manifests <- dbGetQuery(con, "SELECT hml_id, manifest_file FROM info_biobank_manifests") %>%
-    # Get biobank shipment dates
-    mutate(last_manifest_date = ifelse(str_detect(manifest_file, "April 2023"), "April 2023",
-                                       str_extract(manifest_file, "[^_]*_[^_]*")),
-           last_manifest_date = paste0("01 ", str_remove(last_manifest_date, "Manifest_")),
-           last_manifest_date = as.Date(last_manifest_date, format = "%d %B %Y")) %>%
-    # Filter manifests including or before the freeze date
-    filter(last_manifest_date <= freeze_date) %>%
+  info_biobank_manifests <- dbGetQuery(con, 'SELECT hml_id, manifest_file, "Collection Date" FROM info_biobank_manifests') %>%
+    # Get collection dates (two different formats so use lubridate::parse_date_time)
+    mutate(last_collection_date = parse_date_time(`Collection Date`, orders = c("mdy", "ymd"))) %>%
+    filter(last_collection_date <= freeze_date) %>%
     # Get latest manifest date for each person
-    slice_max(n = 1, by = hml_id, order_by = last_manifest_date, with_ties = F)
+    slice_max(n = 1, by = hml_id, order_by = last_collection_date, with_ties = F)
   
   # People consented before freeze date (people from first Dec 31 2024 freeze- soft launch, beta freeze)
   beta_freeze_dat_ids <- subset(p2_redcap_consent_form, main_consent_date <= beta_freeze_date)$hml_id
@@ -42,7 +38,7 @@ get_participant_ids <- function(freeze_date, connection){
   freeze_dat_ids <- info_hml_id_data %>%
     arrange(desc(hml_id)) %>%
     left_join(p2_redcap_consent_form, by = "hml_id") %>%
-    left_join(select(info_biobank_manifests, hml_id, last_manifest_date), by = "hml_id") %>%
+    left_join(select(info_biobank_manifests, hml_id, last_collection_date), by = "hml_id") %>%
     mutate(in_biobank_manifests = ifelse(hml_id %in% info_biobank_manifests$hml_id, "yes", "no"),
            in_beta_freeze = ifelse(hml_id %in% beta_freeze_dat_ids, "yes", "no")) %>%
     # Filter people with consents
@@ -55,7 +51,8 @@ get_participant_ids <- function(freeze_date, connection){
     filter(hml_id_created_date < freeze_date) %>%
     # Add back in people from beta freeze
     select(hml_id) %>%
-    rbind(data.frame(hml_id = beta_freeze_dat_ids))
+    rbind(data.frame(hml_id = beta_freeze_dat_ids)) %>%
+    distinct()
   
   return(freeze_dat_ids$hml_id)
 }
