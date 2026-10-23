@@ -52,9 +52,7 @@ get_participant_ids <- function(freeze_date, connection){
     # Add back in people from beta freeze
     select(hml_id) %>%
     rbind(data.frame(hml_id = beta_freeze_dat_ids)) %>%
-    distinct() %>%
-    # Participant refused consent for genetic testing
-    filter(hml_id != "HML0899")
+    distinct()
   
   return(freeze_dat_ids$hml_id)
 }
